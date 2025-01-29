@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tokens Flow Visualization</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+    }
+
+    /* Panels and layout */
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      padding: 10px;
+      border-radius: 5px;
+    }
+
+    #controls label, 
+    #controls input, 
+    #controls button {
+      margin-right: 8px;
+    }
+
+    #counterDisplay {
+      margin-top: 8px;
+    }
+
+    /* Stats panel inside the tube (top-right corner) */
+    #statsDisplay {
+      position: absolute;
+      top: calc(5.5% - 50px);
+      right: 1100px;
+      z-index: 9999;
+      min-width: 80px;
+      padding: 10px;
+      font-size: 11px;
+      border-radius: 5px;
+      text-align: left;
+      background-color: rgba(255, 255, 255, 0.9);
+      color: #000;
+    }
+
+    body.dark-mode #statsDisplay {
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #fff;
+    }
+
+    /* Horizontal legend inside the tube */
+    #legend {
+      position: absolute;
+      bottom: calc(76% - 40px);
+      left: 21.5%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      padding: 10px;
+      font-size: 10px;
+      border-radius: 5px;
+      text-align: center;
+      background-color: rgba(255, 255, 255, 0.9);
+      color: #000;
+    }
+
+    body.dark-mode #legend {
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #fff;
+    }
+
+    #legend ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    #legend li {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .color-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    /* Theme-specific styles */
+    body.dark-mode {
+      color: #ffffff;
+    }
+
+    body.light-mode {
+      color: #000000;
+    }
+  </style>
+</head>
+<body class="dark-mode">
+  <!-- Control panel (left) -->
+  <div id="controls">
+    <label for="tokensWeek">Tokens/week:</label>
+    <input type="number" id="tokensWeek" value="1000000" style="width:120px;">
+    <button onclick="applyRate()">Apply</button>
+    <button onclick="toggleTheme()">Toggle Light/Dark</button>
+    <div id="counterDisplay">Tokens Created: 0</div>
+  </div>
+
+  <!-- Stats panel -->
+  <div id="statsDisplay">
+    <div><strong>Real‐time Stats</strong></div>
+    <div id="stats-content">
+      <div>Sec: <span id="stat-second">0.00</span></div>
+      <div>Hour: <span id="stat-hour">0.00</span></div>
+      <div>Day: <span id="stat-day">0.00</span></div>
+      <div>Week: <span id="stat-week">0.00</span></div>
+      <div>Month: <span id="stat-month">0.00</span></div>
+    </div>
+  </div>
+
+  <!-- Horizontal Legend -->
+  <div id="legend">
+    <ul>
+      <li><span class="color-box" style="background: #14F195;"></span> SOL (74.14%)</li>
+      <li><span class="color-box" style="background: #d87300;"></span> BSC (11.55%)</li>
+      <li><span class="color-box" style="background: #1304FF;"></span> Base (7.34%)</li>
+      <li><span class="color-box" style="background: #c4c4c4;"></span> ETH (3.30%)</li>
+      <li><span class="color-box" style="background: #8247E5;"></span> POL (1.65%)</li>
+      <li><span class="color-box" style="background: #2191FF;"></span> ARB (0.81%)</li>
+      <li><span class="color-box" style="background: #FF0420;"></span> OP (0.56%)</li>
+      <li><span class="color-box" style="background: #710008;"></span> TRON (0.52%)</li>
+      <li><span class="color-box" style="background: #FBFD00;"></span> Blast (0.13%)</li>
+    </ul>
+  </div>
+
+  <!-- p5.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.4.2/lib/p5.js"></script>
+  <script>
+    let tokensPerWeek = 1000000;
+    let tokensPerSecond = 0;
+    let accumulated = 0;
+    let tokensCrossed = 0;
+    let creationTimes = [];
+    const TUBE_HEIGHT = 100;
+
+    const STATS_UPDATE_INTERVAL = 1000;
+    let lastStatsUpdate = 0;
+    let isDarkMode = true;
+
+    function setup() {
+      createCanvas(800, 300);
+      frameRate(60);
+      updateTokensPerSecond();
+    }
+
+    function draw() {
+      background(isDarkMode ? 30 : 220);
+      noStroke();
+      let tubeY = (height - TUBE_HEIGHT) / 2;
+      fill(isDarkMode ? 50 : 200);
+      rect(0, tubeY, width, TUBE_HEIGHT);
+
+      let tokensThisFrame = tokensPerSecond / 60;
+      accumulated += tokensThisFrame;
+
+      while (accumulated >= 1) {
+        spawnToken(tubeY, TUBE_HEIGHT);
+        accumulated -= 1;
+      }
+
+      for (let i = tokenList.length - 1; i >= 0; i--) {
+        tokenList[i].update();
+        tokenList[i].display();
+        if (tokenList[i].x > width) {
+          tokensCrossed++;
+          tokenList.splice(i, 1);
+          updateCounterDisplay();
+        }
+      }
+
+      if (millis() - lastStatsUpdate >= STATS_UPDATE_INTERVAL) {
+        lastStatsUpdate = millis();
+        updateStats();
+      }
+    }
+
+    const DOT_DIAMETER = 10; // Changed from 5 to 10 for larger dots
+
+    class Token {
+    constructor(tubeTop, tubeHeight) {
+        this.x = 0;
+        this.y = random(tubeTop, tubeTop + tubeHeight); // Spawn within the tube
+        this.speed = 2;
+        this.color = getRandomColor();
+    }
+
+    update() {
+        this.x += this.speed; // Move the dot horizontally
+    }
+
+    display() {
+        noStroke();
+        fill(this.color);
+        circle(this.x, this.y, DOT_DIAMETER); // Use the updated DOT_DIAMETER
+    }
+    }
+
+
+    let tokenList = [];
+    const colorDistribution = [
+      { color: "#14F195", name: "SOL", weight: 0.7414 },
+      { color: "#d87300", name: "BSC", weight: 0.1155 },
+      { color: "#1304FF", name: "Base", weight: 0.0734 },
+      { color: "#c4c4c4", name: "ETH", weight: 0.0330 },
+      { color: "#8247E5", name: "POL", weight: 0.0165 },
+      { color: "#2191FF", name: "ARB", weight: 0.0081 },
+      { color: "#FF0420", name: "OP", weight: 0.0056 },
+      { color: "#710008", name: "TRON", weight: 0.0052 },
+      { color: "#FBFD00", name: "Blast", weight: 0.0013 },
+    ];
+
+    function getRandomColor() {
+      let r = random();
+      for (let item of colorDistribution) {
+        if (r <= item.weight) return item.color;
+        r -= item.weight;
+      }
+      return colorDistribution[colorDistribution.length - 1].color;
+    }
+
+    function spawnToken(tubeTop, tubeHeight) {
+  const margin = 5; // Add a small margin to prevent tokens from touching or going outside the tube
+  let t = new Token(tubeTop + margin, tubeHeight - 2 * margin);
+  tokenList.push(t);
+  creationTimes.push(Date.now());
+    }
+
+
+    function updateCounterDisplay() {
+      document.getElementById("counterDisplay").textContent =
+        "Tokens Created: " + tokensCrossed;
+    }
+
+    function applyRate() {
+      tokensPerWeek = parseFloat(document.getElementById("tokensWeek").value) || 1000000;
+      updateTokensPerSecond();
+    }
+
+    function updateTokensPerSecond() {
+      tokensPerSecond = tokensPerWeek / (7 * 24 * 3600);
+    }
+
+    function toggleTheme() {
+      isDarkMode = !isDarkMode;
+      document.body.classList.toggle("dark-mode", isDarkMode);
+      document.body.classList.toggle("light-mode", !isDarkMode);
+    }
+
+    function updateStats() {
+  const perSecond = tokensPerSecond; // Use the predefined tokens per second value
+  document.getElementById("stat-second").textContent = perSecond.toFixed(2);
+  document.getElementById("stat-hour").textContent = (perSecond * 3600).toFixed(0);
+  document.getElementById("stat-day").textContent = (perSecond * 86400).toFixed(0);
+  document.getElementById("stat-week").textContent = (perSecond * 604800).toFixed(0);
+  document.getElementById("stat-month").textContent = (perSecond * 2592000).toFixed(0);
+}
+
+
+    function countTokensInInterval(intervalSeconds) {
+      let cutoff = Date.now() - intervalSeconds * 1000;
+      return creationTimes.filter((t) => t >= cutoff).length / intervalSeconds;
+    }
+  </script>
+</body>
+</html>
